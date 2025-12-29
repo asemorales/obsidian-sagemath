@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import OutputWriter from './output-writer';
+import { Notice, requestUrl } from 'obsidian';
 
 export default class Client {
     serverUrl: string;
@@ -29,24 +30,46 @@ export default class Client {
             this.queue = [];
             this.outputWriters = {};
 
-            fetch(this.getKernelUrl(), {
+            requestUrl({
+                url: this.getKernelUrl(),
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
-            }).then(response => response.json())
-                .then((data) => {
-                    this.sessionId = data.id;
-                    this.webSocket = new WebSocket(this.getWebSocketUrl());
-                    this.webSocket.onopen = () => {
-                        this.connected = true;
-                        resolve();
+            })
+            .then((response) => {
+                this.connected = false;
+
+                const data = response.json;
+                if (!data || !data.id) {
+                    throw new Error("Invalid kernel response or format.");
+                }
+
+                this.sessionId = data.id;
+                console.log(`SageMath Integration: Connected to kernel ${this.sessionId}`);
+
+                this.webSocket = new WebSocket(this.getWebSocketUrl());
+                this.webSocket.onopen = () => {
+                    this.connected = true;
+                    resolve();
+                }
+                this.webSocket.onmessage = (msg: MessageEvent) => { this.handleReply(msg); }
+                this.webSocket.onclose = () => { this.disconnect(); }
+                this.webSocket.onerror = (ev: Event) => { 
+                    console.error("SageMath Integration: WebSocket error ", ev);
+
+                    if (!this.connected) {
+                        reject(new Error("Connection failed during handshake."));
+                    } else {
+                        new Notice("Connection to SageMath lost.");
                     }
-                    this.webSocket.onmessage = (msg: MessageEvent) => { this.handleReply(msg); }
-                    this.webSocket.onclose = () => { this.disconnect(); }
-                    this.webSocket.onerror = () => { this.disconnect(); }
-                }).catch((e) => {
+
                     this.disconnect();
-                    reject(e);
-                });
+                };
+            })
+            .catch((e) => {
+                console.error(`SageMath Integration: Failed to connect. Status: ${e.status}`);
+                this.disconnect();
+                reject(e);
+            });
         });
     }
 

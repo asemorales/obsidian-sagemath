@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, SageMathPluginSettings, SageMathSettingTab } from "./settings";
-import { MarkdownView } from 'obsidian';
+import { MarkdownView, Notice } from 'obsidian';
 import { Plugin } from 'obsidian';
 import Client from './client';
 
@@ -46,15 +46,18 @@ export default class SageMathPlugin extends Plugin {
 
 	async executeCurrentDoc() {
 		const activeView = this.getActiveView();
-
 		if (!activeView) return;
 
 		const currentMode = activeView.getMode();
 		const contentEl = activeView.contentEl;
-
 		if (currentMode !== 'preview') return;
 
-		await this.client.connect();
+		try {
+			await this.client.connect();
+		} catch (error) {
+			new Notice("SageMath Integration could not connect to server.");
+			return;
+		}
 
 		contentEl.querySelectorAll('code.is-loaded.language-sage').forEach((codeEl: HTMLElement) => {
 			let outputEl = <HTMLElement>codeEl.parentNode?.parentNode?.querySelector('.sagecell-output');
@@ -75,9 +78,13 @@ export default class SageMathPlugin extends Plugin {
 	}
 
 	async configurePrism() {
-		if (!window.Prism) return;
+		if (!window.Prism) {
+			console.warn("SageMath Integration: Prism not yet loaded.");
+			return;
+		}
+
 		if (!window.Prism.languages.python) {
-			console.warn("SageMath Integration: Prism Python language not found. Sage blocks will not be highlighted.");
+			console.warn("SageMath Integration: Prism Python language not yet loaded. Sage blocks will not be highlighted.");
 			return;
 		}
 
