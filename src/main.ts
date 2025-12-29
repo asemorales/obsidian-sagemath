@@ -1,99 +1,96 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { DEFAULT_SETTINGS, SageMathPluginSettings, SageMathSettingTab } from "./settings";
+import { MarkdownView } from 'obsidian';
+import { Plugin } from 'obsidian';
+import Client from './client';
 
-// Remember to rename these classes and interfaces!
-
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class SageMathPlugin extends Plugin {
+	settings: SageMathPluginSettings;
+	client: Client;
 
 	async onload() {
+		console.log("SageMath Integration: Initialized plugin.");
+
 		await this.loadSettings();
+		this.initSettings();
+		this.initCommands();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+		this.app.workspace.onLayoutReady(() => {
+			this.client = new Client(this.settings);
+			this.configurePrism();
+			this.loadMathJax();	
 		});
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
-	}
-
-	onunload() {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<SageMathPluginSettings>);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
-}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+	initSettings() {
+		this.addSettingTab(new SageMathSettingTab(this.app, this));
 	}
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
+	initCommands() {
+		this.addCommand({
+			id: 'execute-sage-cells',
+			name: 'Execute all sage cells in the current document.',
+			checkCallback: (checking: boolean): boolean | void => {
+				if (checking) return this.getActiveView()?.getMode() === 'preview';
+				this.executeCurrentDoc();
+			}
+		});
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	async executeCurrentDoc() {
+		const activeView = this.getActiveView();
+
+		if (!activeView) return;
+
+		const currentMode = activeView.getMode();
+		const contentEl = activeView.contentEl;
+
+		if (currentMode !== 'preview') return;
+
+		await this.client.connect();
+
+		contentEl.querySelectorAll('code.is-loaded.language-sage').forEach((codeEl: HTMLElement) => {
+			let outputEl = <HTMLElement>codeEl.parentNode?.parentNode?.querySelector('.sagecell-output');
+
+			if (outputEl) outputEl.remove();
+			outputEl = document.createElement('div');
+			outputEl.className = 'sagecell-output';
+
+			codeEl.parentNode?.parentNode?.insertBefore(outputEl, codeEl.nextSibling);
+			this.client.enqueue(codeEl.innerText, outputEl);
+		});
+
+		this.client.send();
+	}
+
+	getActiveView = (): MarkdownView | null => {
+		return this.app.workspace.getActiveViewOfType(MarkdownView);
+	}
+
+	async configurePrism() {
+		if (!window.Prism) return;
+		if (!window.Prism.languages.python) {
+			console.warn("SageMath Integration: Prism Python language not found. Sage blocks will not be highlighted.");
+			return;
+		}
+
+		window.Prism.languages.sage = window.Prism.languages.python;
+		window.Prism.highlightAll();
+	}
+
+	async loadMathJax() {
+		if (!window.MathJax) {
+			var scriptEl = document.createElement('script');
+			scriptEl.type = 'text/javascript';
+			scriptEl.src = '/lib/mathjax/tex-chtml-full.js';
+			document.body.appendChild(scriptEl);
+		}
 	}
 }
