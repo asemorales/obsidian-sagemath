@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import OutputWriter from './output-writer';
 import { Notice, requestUrl } from 'obsidian';
+import { SageMathPluginSettings } from 'settings';
 
 export default class Client {
     serverUrl: string;
@@ -11,9 +12,9 @@ export default class Client {
     queue: string[];
     outputWriters: any;
 
-    constructor(settings: any) {
+    constructor(settings: SageMathPluginSettings) {
         this.connected = false;
-        this.serverUrl = settings.serverUrl;
+        this.serverUrl = this.cleanServerUrl(settings.serverUrl);
         this.queue = [];
         this.outputWriters = {};
     }
@@ -44,10 +45,9 @@ export default class Client {
                 }
 
                 this.sessionId = data.id;
-                console.log(`SageMath Integration: Connected to kernel ${this.sessionId}`);
-
                 this.webSocket = new WebSocket(this.getWebSocketUrl());
                 this.webSocket.onopen = () => {
+                    console.log(`SageMath Integration: Connected to kernel ${this.sessionId}`);
                     this.connected = true;
                     resolve();
                 }
@@ -149,6 +149,10 @@ export default class Client {
             this.webSocket = null;
             resolve();
         });
+    }
+
+    cleanServerUrl(serverUrl: string): string {
+        return serverUrl.replace(/\/$/, ""); 
     }
 
     getKernelUrl(): string {
