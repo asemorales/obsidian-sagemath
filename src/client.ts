@@ -3,6 +3,7 @@ import OutputWriter from './output-writer';
 import { requestUrl } from 'obsidian';
 import { SageMathPluginSettings } from 'settings';
 import SockJS from 'sockjs-client';
+import { log, logError, logWarning } from "logger";
 
 export default class Client {
     serverUrl: string;
@@ -32,8 +33,8 @@ export default class Client {
             this.queue = [];
             this.outputWriters = {};
 
-            console.log(`SageMath Integration: Attempting to connect to kernel.`);
-            
+            log(`Attempting to connect to kernel.`);
+
             requestUrl({
                 url: this.getKernelUrl(),
                 method: 'POST',
@@ -44,16 +45,16 @@ export default class Client {
 
                 const data = response.json;
                 if (!data || typeof data !== 'object') {
-                    throw new Error("SageMath Integration: Response was not a valid JSON object.");
+                    throw new Error("Response was not a valid JSON object.");
                 }
                 if (!data.id || !data.ws_url) {
-                    throw new Error("SageMath Integration: Invalid kernel response format.");
+                    throw new Error("Invalid kernel response format.");
                 }
 
                 this.sessionId = data.id;
                 this.webSocket = new SockJS(this.getWebSocketUrl());
                 this.webSocket.onopen = () => {
-                    console.log(`SageMath Integration: Connected to ${data.ws_url} with kernel ID ${this.sessionId}`);
+                    log(`Connected to ${data.ws_url} with kernel ID ${this.sessionId}`);
                     this.connected = true;
                     resolve();
                 }
@@ -63,7 +64,7 @@ export default class Client {
                 this.webSocket.onclose = () => { this.disconnect(); }
 
                 this.webSocket.onerror = (ev: ErrorEvent) => { 
-                    console.error("SageMath Integration: Error in WebSocket connection:", ev);
+                    logError("Error in WebSocket connection:", ev);
 
                     if (!this.connected) {
                         reject(new Error("Connection failed during handshake."));
@@ -75,7 +76,7 @@ export default class Client {
                 };
             })
             .catch((e) => {
-                console.error(`SageMath Integration: Failed to connect. Status: ${e.status}. Error: ${e}`);
+                logError(`Failed to connect. Status: ${e.status}. Error: ${e}`);
                 this.disconnect();
                 reject(e);
             });
@@ -112,7 +113,7 @@ export default class Client {
         if (this.webSocket) {
             this.webSocket.send(`${this.sessionId}/channels,${payload}`);
         } else {
-            console.warn("SageMath Integration: Attempted to send data before server connection was established.")
+            logWarning("Attempted to send data before server connection was established.")
         }
     }
 

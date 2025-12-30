@@ -2,13 +2,14 @@ import { DEFAULT_SETTINGS, SageMathPluginSettings, SageMathSettingTab } from "./
 import { MarkdownView, Notice } from 'obsidian';
 import { Plugin } from 'obsidian';
 import Client from './client';
+import { log, logWarning } from "logger";
 
 export default class SageMathPlugin extends Plugin {
 	settings: SageMathPluginSettings;
 	client: Client;
 
 	async onload() {
-		console.log("SageMath Integration: Initialized plugin.");
+		log("Initialized plugin.");
 
 		await this.loadSettings();
 		this.initSettings();
@@ -79,12 +80,12 @@ export default class SageMathPlugin extends Plugin {
 
 	async configurePrism() {
 		if (!window.Prism) {
-			console.warn("SageMath Integration: Prism not yet loaded.");
+			logWarning("Prism not yet loaded.");
 			return;
 		}
 
 		if (!window.Prism.languages.python) {
-			console.warn("SageMath Integration: Prism Python language not yet loaded. Sage blocks will not be highlighted.");
+			logWarning("Prism Python language not yet loaded. Sage blocks will not be highlighted.");
 			return;
 		}
 
