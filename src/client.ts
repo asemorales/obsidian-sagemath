@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import OutputWriter from './output-writer';
-import { Notice, requestUrl } from 'obsidian';
+import { requestUrl } from 'obsidian';
 import { SageMathPluginSettings } from 'settings';
+import SockJS from 'sockjs-client';
 
 export default class Client {
     serverUrl: string;
@@ -31,6 +32,8 @@ export default class Client {
             this.queue = [];
             this.outputWriters = {};
 
+            console.log(`SageMath Integration: Attempting to connect to kernel.`);
+            
             requestUrl({
                 url: this.getKernelUrl(),
                 method: 'POST',
@@ -40,33 +43,39 @@ export default class Client {
                 this.connected = false;
 
                 const data = response.json;
-                if (!data || !data.id) {
-                    throw new Error("Invalid kernel response or format.");
+                if (!data || typeof data !== 'object') {
+                    throw new Error("SageMath Integration: Response was not a valid JSON object.");
+                }
+                if (!data.id || !data.ws_url) {
+                    throw new Error("SageMath Integration: Invalid kernel response format.");
                 }
 
                 this.sessionId = data.id;
-                this.webSocket = new WebSocket(this.getWebSocketUrl());
+                this.webSocket = new SockJS(this.getWebSocketUrl());
                 this.webSocket.onopen = () => {
-                    console.log(`SageMath Integration: Connected to kernel ${this.sessionId}`);
+                    console.log(`SageMath Integration: Connected to ${data.ws_url} with kernel ID ${this.sessionId}`);
                     this.connected = true;
                     resolve();
                 }
+
                 this.webSocket.onmessage = (msg: MessageEvent) => { this.handleReply(msg); }
+
                 this.webSocket.onclose = () => { this.disconnect(); }
-                this.webSocket.onerror = (ev: Event) => { 
-                    console.error("SageMath Integration: WebSocket error ", ev);
+
+                this.webSocket.onerror = (ev: ErrorEvent) => { 
+                    console.error("SageMath Integration: Error in WebSocket connection:", ev);
 
                     if (!this.connected) {
                         reject(new Error("Connection failed during handshake."));
                     } else {
-                        new Notice("Connection to SageMath lost.");
+                        reject(new Error("Connection to SageMath lost."));
                     }
 
                     this.disconnect();
                 };
             })
             .catch((e) => {
-                console.error(`SageMath Integration: Failed to connect. Status: ${e.status}`);
+                console.error(`SageMath Integration: Failed to connect. Status: ${e.status}. Error: ${e}`);
                 this.disconnect();
                 reject(e);
             });
@@ -154,13 +163,13 @@ export default class Client {
     cleanServerUrl(serverUrl: string): string {
         return serverUrl.replace(/\/$/, ""); 
     }
-
+    
     getKernelUrl(): string {
-        return `${this.serverUrl}/kernel?CellSessionID=${this.cellSessionId}&timeout=inf`
+        return `${this.serverUrl}/kernel?CellSessionID=${this.cellSessionId}&timeout=inf&accepted_tos=true`
     }
 
     getWebSocketUrl(): string {
-        return `${this.serverUrl}/websocket?CellSessionID=${this.cellSessionId}`
+        return `${this.serverUrl}/sockjs?CellSessionID=${this.cellSessionId}`
     }
 
     getFileUrl(file: string): string {
